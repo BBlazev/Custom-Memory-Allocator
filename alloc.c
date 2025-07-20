@@ -3,7 +3,7 @@
 
 extern void* memspace;
 
-header *findBlock_(header *hdr,word allocation, word n){
+private header *findBlock_(header *hdr,word allocation, word n){
 
     bool ok;
     void *mem;
@@ -21,7 +21,7 @@ header *findBlock_(header *hdr,word allocation, word n){
     if(ok) return  hdr;
 
     else {
-        mem = (void *) hdr + hdr->w;
+        mem = (void *) hdr + (hdr->w*4) + 4;
         hdr_ = (header*) mem;
         n_ = n + hdr->w;
 
@@ -29,13 +29,10 @@ header *findBlock_(header *hdr,word allocation, word n){
     }
 
     returnError(ErrorUnknown);
-
-
 }
 
 
-
-void* make_allocation(word words, header *hdr){
+private void* make_allocation(word words, header *hdr){
     void *ret;
     size_t bytes_in;  
     word words_in;
@@ -46,53 +43,93 @@ void* make_allocation(word words, header *hdr){
     if(words > (Maxwords - words_in))
         returnError(ErrorNoMemory);
     
-    hdr->w = words;
+
+    if (!hdr->alloced && hdr->w > 0) {
+        printf("REUSING: Block of %d words for %d word allocation (wasting %d words)\n", 
+               hdr->w, words, hdr->w - words);
+    } else {
+        hdr->w = words;
+    }
+    
     hdr->alloced = true;
     ret = ((void*) hdr) + 4;
 
     return ret;
 }
 
-void *alloc(int32 bytes){
+
+public void *alloc(int32 bytes){
     word words;
     header * hdr;
     void *mem, *ret; 
     
     words = (!(bytes % 4)) ? bytes / 4 : (bytes / 4) + 1;
 
-    mem = (void*) memspace;
-    hdr = (header*) mem;
+    hdr = findBlock(words);
+    if(!hdr)
+        return (void*) 0;
 
-    if (!(hdr->w)) {
-        if(words > Maxwords)
-            returnError(ErrorNoMemory);
+    if(words > Maxwords)
+        returnError(ErrorNoMemory);
         
+    mem = make_allocation(words, hdr);
+    if(!mem) return (void*)0;
         
-        if(!(ret = make_allocation(words, hdr)))
-            return (void*)0;
-        
-        return ret;  
-    } 
-    else {
-        printf("works\n");
-        exit(0);
-    }
+    return mem;  
 }
 
-int main(int argc, char* argv[]) {
-     
+private void show_(header *hdr){
     header *p;
-    int8 *x;
-    x = alloc(5);
-    printf("0x%x\n", (int*) x);
+    void *mem;
+    int32 counter;
 
-    p = findBlock(500);
-    if(!p){
-        printf("Error %d\n", errno);
-        return -1;
+    for(counter = 1, p = hdr; p->w; counter++) {
+        printf("Alloc %d = %d %s words\n", counter, p->w, (p->alloced) ? "alloced " : "free");
+        mem = (void*)p + (p->w * 4) + 4;  
+        p = (header*)mem;
     }
-    printf("0x%x\n", (int*) memspace);
-    printf("0x%x\n", (int*) p);
+
+    return;
+}
+
+public bool free_it(void *address){
+
+    header *p;
+    int16 n;
+
+    p = (header*)((char*)address - 4);
+    (!(p->w) || (!(p->alloced))) ? ({returnError(ErrorDoubleFree); }) : (void)0;
+
+    n = (p->w * 4);
+    zero((int8*) address,n);
+    p->alloced = false;
+
+    return true;
+
+}
+
+
+int main(int argc, char* argv[]) {
+    int8 *x, *x2, *x3, *x4;
+    bool ret;
+
+    printf("Memspace: 0x%x\n", (int*) memspace);
+    
+    x = alloc(5);   
+    x2 = alloc(2000);
+    x3 = alloc(1);
+    
+    printf("\n--- After all allocations ---\n");
+    show();
+    
+    ret = free_it(x2);
+    printf("\n--- After freeing x2 ---\n");
+    show();
+
+    x4 = alloc(1560);
+ 
+    printf("\n--- After allocating x4 ---\n");
+    show();
 
     return 0;
 }
